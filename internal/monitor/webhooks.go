@@ -8,25 +8,21 @@ import (
 	http "github.com/vimbing/fhttp"
 )
 
-func (m *Monitor) SendWebhook(entries []MovieEntry) {
+func (m *Monitor) SendWebhook(entry MovieEntry) {
 	for i := 0; i < 3; i++ {
-		fields := []Field{}
-
-		for _, e := range entries {
-			fields = append(fields, Field{
-				Name:   e.Time,
-				Value:  fmt.Sprintf("[BILETY](%s)", e.BookingLink),
-				Inline: true,
-			})
-		}
-
 		payload, err := json.Marshal(WebhookPayload{
 			Content: nil,
 			Embeds: []Embeds{
 				{
-					Title:  fmt.Sprintf("Nowy dzień znaleziony esssa: %s", entries[0].Day),
-					Color:  nil,
-					Fields: fields,
+					Title: fmt.Sprintf("Nowy seansik o id: %s", entry.Id),
+					Color: nil,
+					Fields: []Field{
+						{
+							Value:  fmt.Sprintf("[BILETY](%s)", entry.BookingLink),
+							Name:   fmt.Sprintf("%s - %s", entry.Day, entry.Time),
+							Inline: true,
+						},
+					},
 				},
 			},
 			Attachments: []any{},
@@ -36,6 +32,7 @@ func (m *Monitor) SendWebhook(entries []MovieEntry) {
 			continue
 		}
 
+		// HEHE WEBHOOK IN PLAIN STRING YES I DO IT BECOUSE IM GIGACHAD PLS DON'T SPAM :(
 		req, err := http.NewRequest("POST", "https://discord.com/api/webhooks/1135879696815493200/_EJU3Q-oQizXa5iPA62F_wVqVsGniHVEVF2gDjuNQw5p2k9cUOWaG97WXDDZW6Rf_IVM", bytes.NewBuffer(payload))
 
 		if err != nil {

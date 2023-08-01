@@ -11,17 +11,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func waitTillNextDay() {
-	lastDay := time.Now().Day()
-
-	for {
-		time.Sleep(time.Second * 1)
-		if time.Now().Day() != lastDay {
-			return
-		}
-	}
-}
-
 func handleDate(date string) string {
 	if strings.HasPrefix(date, "0") {
 		return date
@@ -30,7 +19,7 @@ func handleDate(date string) string {
 	return fmt.Sprintf("0%s", date)
 }
 
-func (m *Monitor) GetData(date string) ([]MovieEntry, error) {
+func (m *Monitor) GetData(date string) ([]MovieEntry, []string, error) {
 	req, err := http.NewRequest(
 		"GET",
 		fmt.Sprintf("https://www.cinema-city.pl/pl/data-api-service/v1/quickbook/10103/cinema-events/in-group/krakow/with-film/5297s2r/at-date/2023-08-%s?attr=&lang=pl_PL", handleDate(date)),
@@ -38,7 +27,7 @@ func (m *Monitor) GetData(date string) ([]MovieEntry, error) {
 	)
 
 	if err != nil {
-		return []MovieEntry{}, err
+		return []MovieEntry{}, []string{}, err
 	}
 
 	req.Header = http.Header{
@@ -58,13 +47,13 @@ func (m *Monitor) GetData(date string) ([]MovieEntry, error) {
 	res, err := m.Client.Do(req)
 
 	if err != nil {
-		return []MovieEntry{}, err
+		return []MovieEntry{}, []string{}, err
 	}
 
 	body, err := utils.GetResponseBody(res)
 
 	if err != nil {
-		return []MovieEntry{}, err
+		return []MovieEntry{}, []string{}, err
 	}
 
 	var resBody GetBodyResponse
@@ -73,10 +62,11 @@ func (m *Monitor) GetData(date string) ([]MovieEntry, error) {
 	if len(resBody.Body.Events) == 0 {
 		fmt.Println("No events for this day...")
 
-		return []MovieEntry{}, nil
+		return []MovieEntry{}, []string{}, err
 	}
 
 	entries := make([]MovieEntry, 0)
+	ids := make([]string, 0)
 
 	for _, e := range resBody.Body.Events {
 		if strings.EqualFold(e.FilmID, OPPENHIMER_ID) && slices.Contains(e.AttributeIds, "imax") {
@@ -87,6 +77,7 @@ func (m *Monitor) GetData(date string) ([]MovieEntry, error) {
 				timeString = time[1]
 			}
 
+			ids = append(ids, e.ID)
 			entries = append(entries, MovieEntry{
 				Id:          e.ID,
 				Day:         time[0],
@@ -96,14 +87,16 @@ func (m *Monitor) GetData(date string) ([]MovieEntry, error) {
 		}
 	}
 
-	return entries, nil
+	return entries, ids, nil
 }
 
 func (m *Monitor) Monitor() {
+	ids := make([]string, 0)
+
 	for {
 		time.Sleep(time.Second * 2)
 
-		data, err := m.GetData(fmt.Sprint(time.Now().Day() + 3))
+		data, _, err := m.GetData(fmt.Sprint(time.Now().Day() + 2))
 
 		if err != nil {
 			time.Sleep(time.Minute * 1)
@@ -114,7 +107,12 @@ func (m *Monitor) Monitor() {
 			continue
 		}
 
-		m.SendWebhook(data)
-		waitTillNextDay()
+		for _, movie := range data {
+			if !slices.Contains(ids, movie.Id) {
+				m.SendWebhook(movie)
+				ids = append(ids, movie.Id)
+				time.Sleep(time.Second * 1)
+			}
+		}
 	}
 }
